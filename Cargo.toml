@@ -1,0 +1,22 @@
+[package]
+name = "zero-trust-vault"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# FUSE ve OS Entegrasyonu
+fuser = "0.14"
+libc = "0.2"
+
+# Kriptografi
+aes-gcm = "0.10"
+sha2 = "0.10"
+rand = "0.8"
+
+# Ağ ve P2P (SPAKE2 ve Tünelleme için)
+spake2 = "0.4"
+tokio = { version = "1", features = ["full"] }
+
+# CLI ve Yardımcılar
+clap = { version = "4.0", features = ["derive"] }
+anyhow = "1.0"
