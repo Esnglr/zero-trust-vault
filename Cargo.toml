@@ -3,28 +3,28 @@ name = "zero_trust_vault"
 version = "0.1.0"
 edition = "2024"
 
+# ------------------------------------------------------------------------------
+# EXECUTABLE CONFIGURATION
+# Tells Cargo to build a binary named "atom" using our main.rs file
+# ------------------------------------------------------------------------------
+[[bin]]
+name = "atom"
+path = "src/main.rs"
+
 [dependencies]
-# ------------------------------------------------------------------------------
-# CRYPTOGRAPHY
-# ------------------------------------------------------------------------------
-aes-gcm = "0.10"  # Authenticated encryption for file blocks and VFS headers
-rand = "0.8"      # Secure generation of nonces and salts
-sha2 = "0.10"     # SHA-256 / SHA-512 for key derivation or hashing passwords
+# Cryptography
+aes-gcm = "0.10"  
+rand = "0.8"      
+sha2 = "0.10"     
 
-# ------------------------------------------------------------------------------
-# NETWORK
-# ------------------------------------------------------------------------------
-spake2 = "0.4"
-# ------------------------------------------------------------------------------
-# INTERACTIVE CLI
-# ------------------------------------------------------------------------------
-rustyline = "14.0" # Readline implementation for building the interactive vault shell
+# Interactive CLI & Subcommands
+rustyline = "14.0" 
+clap = { version = "4.4", features = ["derive"] } # <-- NEW: For parsing `create` and `shell`
+rpassword = "7.2" # safely masks password input in the terminal
 
-# ------------------------------------------------------------------------------
-# METADATA & SERIALIZATION (VFS)
-# ------------------------------------------------------------------------------
-serde = { version = "1.0", features = ["derive"] } # Core serialization framework
-bincode = "1.3"                                    # Extremely fast, compact binary serialization
+# Metadata & Serialization
+serde = { version = "1.0", features = ["derive"] } 
+bincode = "1.3"                                    
 
 [dev-dependencies]
-proptest = "1.4"  # For generating randomized fuzz-tests
+proptest = "1.4"

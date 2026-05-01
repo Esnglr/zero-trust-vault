@@ -1,95 +1,173 @@
+use clap::{Parser, Subcommand};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
-use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::io::{self, Write};
+use std::path::PathBuf;
 
-// Replace `zero_trust_vault` with the actual name of your crate from Cargo.toml
-use zero_trust_vault::vfs::{FileMetadata, VfsContainer, VfsNode};
+// Import our custom modules
+use zero_trust_vault::crypto::kdf::derive_key_from_password;
+use zero_trust_vault::vfs::{VfsContainer, VfsNode};
+
+/// Atom: A Zero-Trust Encrypted Vault
+#[derive(Parser)]
+#[command(name = "atom")]
+#[command(about = "A highly secure, zero-trust virtual filesystem", long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Create a new encrypted vault
+    Create {
+        /// The name of the vault (will append .aegis)
+        #[arg(short, long)]
+        name: Option<String>,
+
+        /// The master password for the vault
+        #[arg(short, long)]
+        password: Option<String>,
+    },
+    /// Open an interactive shell for an existing vault
+    Shell {
+        /// The path to the .aegis vault file
+        vault_file: PathBuf,
+    },
+}
 
 fn main() -> rustyline::Result<()> {
-    // 1. Setup Master Key and Vault Path (Hardcoded for now)
-    let master_key: [u8; 32] = [42; 32];
-    let vault_path = "my_secure_vault.aegis";
+    let cli = Cli::parse();
 
-    // 2. Initialize or Load the Vault
-    let mut vault = VfsContainer::load(vault_path, &master_key).unwrap_or_else(|_| {
-        println!("Creating new vault: {}", vault_path);
-        VfsContainer::init(vault_path, &master_key).expect("Critical Error: Cannot create vault")
-    });
+    match &cli.command {
+        Commands::Create { name, password } => {
+            // 1. Resolve the vault name (use flag or prompt user)
+            let final_name = match name {
+                Some(n) => n.clone(),
+                None => {
+                    print!("Enter new vault name: ");
+                    io::stdout().flush()?;
+                    let mut input = String::new();
+                    io::stdin().read_line(&mut input)?;
+                    input.trim().to_string()
+                }
+            };
 
-    // --- TEMPORARY: Seed some dummy directories and files for testing ---
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-    
-    let mut docs_dir = HashMap::new();
-    docs_dir.insert(
-        "passwords.kdbx".to_string(),
-        VfsNode::File(FileMetadata { offset: 1200, size: 1024, timestamp: now }),
-    );
-    
-    vault.index.root.insert("docs".to_string(), VfsNode::Directory(docs_dir));
-    vault.index.root.insert(
-        "readme.txt".to_string(),
-        VfsNode::File(FileMetadata { offset: 800, size: 42, timestamp: now }),
-    );
-    // -------------------------------------------------------------------
+            if final_name.is_empty() {
+                eprintln!("❌ Error: Vault name cannot be empty.");
+                std::process::exit(1);
+            }
 
-    // 3. Setup the Interactive Shell
+            // 2. Resolve the password with a verification loop
+            let final_password = match password {
+                Some(p) => p.clone(),
+                None => {
+                    loop {
+                        let p1 = rpassword::prompt_password("Enter master password: ").unwrap();
+                        let p2 = rpassword::prompt_password("Verify master password: ").unwrap();
+
+                        if p1 != p2 {
+                            eprintln!("❌ Passwords do not match. Please try again.\n");
+                            continue;
+                        }
+
+                        if p1.is_empty() {
+                            eprintln!("❌ Error: Password cannot be empty.\n");
+                            continue;
+                        }
+
+                        // If we reach here, passwords match and are not empty
+                        break p1;
+                    }
+                }
+            };
+
+            // Catch-all in case they passed an empty string via the CLI flag (e.g., --password "")
+            if final_password.is_empty() {
+                eprintln!("❌ Error: Password cannot be empty.");
+                std::process::exit(1);
+            }
+
+            let file_name = format!("{}.aegis", final_name);
+            let master_key = derive_key_from_password(&final_password);
+
+            println!("Creating new zero-trust vault: {}", file_name);
+
+            match VfsContainer::init(&file_name, &master_key) {
+                Ok(_) => println!("✅ Vault created successfully. You can now open it with `atom shell {}`", file_name),
+                Err(e) => eprintln!("❌ Failed to create vault: {}", e),
+            }
+        }
+        Commands::Shell { vault_file } => {
+            // Securely prompt for the password using rpassword instead of standard I/O
+            let password = rpassword::prompt_password("Enter vault password: ").unwrap();
+            let master_key = derive_key_from_password(&password);
+
+            println!("Decrypting and verifying vault integrity...");
+            
+            match VfsContainer::load(vault_file, &master_key) {
+                Ok(vault) => {
+                    println!("✅ Vault unlocked successfully.\n");
+                    run_interactive_shell(vault)?;
+                }
+                Err(e) => {
+                    eprintln!("❌ Access Denied: Invalid password or corrupted vault file.");
+                    eprintln!("Error details: {}", e);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// The REPL (Read-Eval-Print Loop) for interacting with the unlocked vault
+fn run_interactive_shell(vault: VfsContainer) -> rustyline::Result<()> {
     let mut rl = DefaultEditor::new()?;
-    
-    // Tracks the current directory state (e.g., ["docs", "finance"] represents /docs/finance)
     let mut current_path: Vec<String> = Vec::new();
 
     println!("========================================");
     println!("🛡️  Zero-Trust Vault Interactive Shell");
-    println!("Type 'help' for commands, 'exit' to quit");
+    println!("Type 'help' for commands, 'exit' to lock");
     println!("========================================");
 
-    // 4. The REPL Loop
     loop {
-        // Build the dynamic prompt (e.g., aegis:/docs> )
         let display_path = if current_path.is_empty() {
             "/".to_string()
         } else {
             format!("/{}", current_path.join("/"))
         };
-        let prompt = format!("zero-trust-vault:{} > ", display_path);
+        
+        let prompt = format!("atom:{} > ", display_path);
 
-        // Read input
-        let readline = rl.readline(&prompt);
-        match readline {
+        match rl.readline(&prompt) {
             Ok(line) => {
                 let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                rl.add_history_entry(line)?; // Allows hitting the 'Up' arrow to see previous commands
+                if line.is_empty() { continue; }
+                rl.add_history_entry(line)?;
 
-                // Parse command and argument
                 let mut parts = line.split_whitespace();
                 let cmd = parts.next().unwrap_or("");
                 let arg = parts.next().unwrap_or("");
 
                 match cmd {
                     "exit" | "quit" => {
-                        println!("Locking vault and exiting...");
+                        println!("Wiping memory, locking vault, and exiting...");
                         break;
                     }
                     "help" => {
                         println!("Available commands:");
                         println!("  ls        - List contents of the current directory");
-                        println!("  cd <dir>  - Change directory (supports 'cd ..' and 'cd /')");
-                        println!("  exit      - Lock and close the vault");
+                        println!("  cd <dir>  - Change directory");
+                        println!("  exit      - Safely lock and close the vault");
                     }
                     "ls" => {
-                        // Fetch the current directory map from our VFS tree
                         if let Some(dir) = vault.get_directory(&current_path) {
                             if dir.is_empty() {
                                 println!("  (empty)");
                             } else {
-                                // Sort keys alphabetically for cleaner output
                                 let mut keys: Vec<&String> = dir.keys().collect();
                                 keys.sort();
-
                                 for name in keys {
                                     match &dir[name] {
                                         VfsNode::Directory(_) => println!("  [DIR]  {}", name),
@@ -103,28 +181,25 @@ fn main() -> rustyline::Result<()> {
                     }
                     "cd" => {
                         if arg.is_empty() || arg == "/" {
-                            current_path.clear(); // Return to root
+                            current_path.clear();
                         } else if arg == ".." {
-                            current_path.pop(); // Go up one level
+                            current_path.pop();
                         } else {
-                            // Test if the target directory actually exists
                             let mut test_path = current_path.clone();
                             test_path.push(arg.to_string());
                             
                             if vault.get_directory(&test_path).is_some() {
-                                current_path = test_path; // Apply the navigation
+                                current_path = test_path;
                             } else {
                                 println!("cd: no such directory: {}", arg);
                             }
                         }
                     }
-                    _ => {
-                        println!("Unknown command: '{}'. Type 'help' for options.", cmd);
-                    }
+                    _ => println!("Unknown command: '{}'. Type 'help' for options.", cmd),
                 }
             },
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
-                println!("\nLocking vault and exiting...");
+                println!("\nWiping memory, locking vault, and exiting...");
                 break;
             },
             Err(err) => {
