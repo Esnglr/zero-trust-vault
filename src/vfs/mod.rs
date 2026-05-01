@@ -51,18 +51,33 @@ impl From<bincode::Error> for VfsError {
 // VFS DATA STRUCTURES
 // -----------------------------------------------------------------------------
 
-/// Represents a single file inside the vault
+/// Metadata for a specific file payload
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
-pub struct FileEntry {
+pub struct FileMetadata {
     pub offset: u64,
     pub size: u64,
-    // Future additions: timestamps, permissions, etc.
+    pub timestamp: u64, // Unix epoch
+}
+
+/// A node in the virtual filesystem tree: either a file or a folder
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub enum VfsNode {
+    File(FileMetadata),
+    Directory(HashMap<String, VfsNode>),
 }
 
 /// The File Allocation Table (FAT) / Directory Structure
-#[derive(Debug, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 pub struct VfsIndex {
-    pub files: HashMap<String, FileEntry>,
+    pub root: HashMap<String, VfsNode>,
+}
+
+impl Default for VfsIndex {
+    fn default() -> Self {
+        Self {
+            root: HashMap::new(),
+        }
+    }
 }
 
 /// The main Vault Container holding the in-memory state
@@ -133,6 +148,21 @@ impl VfsContainer {
 
         Ok(Self { file_path: path, index })
     }
+
+    /// Helper method to safely traverse the virtual directory path.
+    /// Returns the HashMap representing the target directory if it exists.
+    pub fn get_directory(&self, path: &[String]) -> Option<&HashMap<String, VfsNode>> {
+        let mut current = &self.index.root;
+        
+        for part in path {
+            if part.is_empty() { continue; }
+            match current.get(part) {
+                Some(VfsNode::Directory(dir)) => current = dir,
+                _ => return None, // Path doesn't exist, or it points to a file
+            }
+        }
+        Some(current)
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -153,28 +183,22 @@ mod tests {
         let _ = fs::remove_file(test_file);
 
         // 1. Init a new container
-        let init_result = VfsContainer::init(test_file, &master_key);
-        assert!(init_result.is_ok(), "Failed to init vault");
-        
-        let mut container = init_result.unwrap();
+        let mut container = VfsContainer::init(test_file, &master_key).expect("Failed to init vault");
 
-        // Let's add a dummy file to the index to ensure state is saved correctly
-        container.index.files.insert(
+        // Add a dummy file using the new hierarchical structure
+        container.index.root.insert(
             "secrets.txt".to_string(),
-            FileEntry { offset: 1024, size: 500 }
+            VfsNode::File(FileMetadata { offset: 1024, size: 500, timestamp: 0 })
         );
-        assert_eq!(container.index.files.len(), 1);
+        assert_eq!(container.index.root.len(), 1);
 
         // 2. Load the container back from disk
         // Since we didn't re-save to disk after adding the dummy file, 
         // the loaded container should have an empty index (len == 0).
-        let load_result = VfsContainer::load(test_file, &master_key);
-        assert!(load_result.is_ok(), "Failed to load vault");
-
-        let loaded_container = load_result.unwrap();
+        let loaded_container = VfsContainer::load(test_file, &master_key).expect("Failed to load vault");
         
         assert_eq!(loaded_container.file_path, PathBuf::from(test_file));
-        assert_eq!(loaded_container.index.files.len(), 0); // Confirms we read the empty index from disk
+        assert_eq!(loaded_container.index.root.len(), 0); // Confirms we read the empty index from disk
 
         // Clean up the file system
         fs::remove_file(test_file).expect("Failed to clean up test file");
