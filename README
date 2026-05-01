@@ -33,10 +33,9 @@ Atom is currently evolving from a local encryption tool into a secure, decentral
 ## 📦 Installation
 
 To install Atom natively onto your system, clone this repository and use Cargo:
-```bash
+
 cd zero-trust-vault
 cargo test --release
 cargo build --release
 cargo install --path .
 atom create my_vault
-```
