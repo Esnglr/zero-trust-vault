@@ -4,3 +4,4 @@ pub mod crypto {
 }
 
 pub mod vfs;
+pub mod sandbox;
