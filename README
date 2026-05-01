@@ -33,9 +33,46 @@ Atom is currently evolving from a local encryption tool into a secure, decentral
 ## 📦 Installation
 
 To install Atom natively onto your system, clone this repository and use Cargo:
-
+```bash
 cd zero-trust-vault
 cargo test --release
 cargo build --release
 cargo install --path .
-atom create my_vault
+```
+
+Ensure `~/.cargo/bin` is added to your system `$PATH`.
+
+---
+
+## 🛠️ Usage
+
+**Create a new vault:**
+```bash
+# Interactive mode (hides password input)
+atom create
+
+# Or via flags for automation
+atom create --name top_secret --password supersecure123
+```
+
+**Open a vault in the interactive shell:**
+```bash
+atom shell top_secret.aegis
+```
+
+Inside the interactive shell:
+```text
+atom:/ > ls
+  [DIR]  docs
+       42B readme.txt
+atom:/ > cd docs
+atom:/docs > exit
+```
+
+---
+
+## 🏗️ Architecture: The `.aegis` Format
+
+1. **Header:** Contains the `AEGISVFS` magic bytes and the size of the encrypted directory index.
+2. **Encrypted Index (FAT):** A serialized, AES-GCM encrypted payload containing the virtual file hierarchy, file metadata, and the root hashes of the Merkle Trees.
+3. **Encrypted Payload Blocks:** Files are broken into 4KB blocks, independently encrypted, and appended to the end of the container.
