@@ -1,9 +1,9 @@
-mod fuse;
+mod vfs;
 mod crypto;
 mod network;
 mod sandbox;
 
 fn main() {
     println!("Zero-Trust Vault is starting...");
-    // gelecekte buraya cli (clap) kodlari gelecek
+    // CLI related code will be written here in the future.
 }

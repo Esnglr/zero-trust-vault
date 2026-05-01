@@ -1,22 +1,30 @@
 [package]
-name = "zero-trust-vault"
+name = "zero_trust_vault"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# FUSE ve OS Entegrasyonu
-fuser = "0.14"
-libc = "0.2"
+# ------------------------------------------------------------------------------
+# CRYPTOGRAPHY
+# ------------------------------------------------------------------------------
+aes-gcm = "0.10"  # Authenticated encryption for file blocks and VFS headers
+rand = "0.8"      # Secure generation of nonces and salts
+sha2 = "0.10"     # SHA-256 / SHA-512 for key derivation or hashing passwords
 
-# Kriptografi
-aes-gcm = "0.10"
-sha2 = "0.10"
-rand = "0.8"
-
-# Ağ ve P2P (SPAKE2 ve Tünelleme için)
+# ------------------------------------------------------------------------------
+# NETWORK
+# ------------------------------------------------------------------------------
 spake2 = "0.4"
-tokio = { version = "1", features = ["full"] }
+# ------------------------------------------------------------------------------
+# INTERACTIVE CLI
+# ------------------------------------------------------------------------------
+rustyline = "14.0" # Readline implementation for building the interactive vault shell
 
-# CLI ve Yardımcılar
-clap = { version = "4.0", features = ["derive"] }
-anyhow = "1.0"
+# ------------------------------------------------------------------------------
+# METADATA & SERIALIZATION (VFS)
+# ------------------------------------------------------------------------------
+serde = { version = "1.0", features = ["derive"] } # Core serialization framework
+bincode = "1.3"                                    # Extremely fast, compact binary serialization
+
+[dev-dependencies]
+proptest = "1.4"  # For generating randomized fuzz-tests
